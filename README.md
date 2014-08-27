@@ -1,0 +1,88 @@
+Simpy
+=====
+import random
+import simpy
+
+#AREA DE DATOS
+#-----------------------------------------------------------------------
+cant_proc = 15          #cantidad de procesos a realizar
+intervalo = 10.0        #intervalo de tiempo de llegada de los procesos
+cant_inst = 3           #cantidad de instrucciones procesadas por el CPU
+
+
+#-----------------------------------------------------------------------
+#-------------------------------PROGRAMA--------------------------------
+#-----------------------------------------------------------------------
+
+#-----------------------------------------------------------------------
+#se crean los procesos con el tiempo de espera entre cada uno
+def source (env, cant_proc, intervalo, CPU, RAM, espera, cant_inst):
+    for i in range (cant_proc):
+        tiem_proceso = random.expovariate(1.0/intervalo)
+        env.process(proceso(env, 'Proceso%02d' % i, CPU, RAM, espera, cant_inst))
+        yield env.timeout(tiem_proceso)
+
+#-----------------------------------------------------------------------
+#Se evalua el proceso en cada una de las etapas
+def proceso (env, proceso, CPU, RAM, espera, cant_inst):
+    arrive = env.now                        #tiempo en el que llega el proceso a solicitar RAM
+    cant_RAM = random.randint(1,10)         #cantidad de RAM que solicita el proceso
+    print ('Tiempo: %d El %s solicito %d de RAM' % (env.now,proceso,cant_RAM))
+
+    with RAM.get(cant_RAM) as req:
+        yield req       #esperar por la memoria RAM
+
+        wait = env.now - arrive         #tiempo de espara para la RAM
+        print ('Tiempo: %d El %s llego a READY, espero RAM por %d segundos' % (env.now,proceso,wait))
+
+        while cant_inst > 0:
+        #---------------------------------------------------------------
+        #tiempo de proceso del CPU
+            with CPU.request() as reqCPU:
+                yield reqCPU           #esperar para ser atendidos por el CPU
+                print ('Tiempo: %d El %s is Running instrucciones %d' %(env.now, proceso, cant_inst))
+                yield env.timeout(1)    #tiempo del CPU
+
+                if cant_inst > 3:
+                    cant_inst = cant_inst - 3
+                else:
+                    cant_inst = 0
+        #---------------------------------------------------------------
+
+            if cant_inst > 0:
+                decision = random.choice(["ready","waiting"])
+                if decision == "waiting":
+                    with espera.request() as reqespera:
+                        yield reqespera     #tiempo para I/O
+                        print('Tiempo: %d El %s esta en Waiting' %(env.now, proceso))
+
+                        yield env.timeout(1)    #tiempo para I/O
+
+                print('Tiempo: %d El %s esta en Ready' %(env.now, proceso))
+
+        #fin del proceso
+        #---------------------------------------------------------------
+        tiempo_total = env.now - arrive
+        print('Tiempo: %d El %s ha Terminado, se tardo %d' %(env.now, proceso, tiempo_total))
+
+        #Se deja de utilizar RAM
+        #---------------------------------------------------------------
+        with RAM.put(cant_RAM) as reqDevolverRAM:
+            yield reqDevolverRAM        #regreso de la RAM
+            print('Tiempo: %d El %s, regreso %d de RAM' %(env.now, proceso, cant_RAM))
+
+                
+#Inicio de la simulacion
+#-----------------------------------------------------------------------
+env = simpy.Environment()
+random.seed(10)
+
+#Inicio de los procesos
+#-----------------------------------------------------------------------
+CPU = simpy.Resource(env, capacity=1)                   #CPU, cantidad de procesos
+RAM = simpy.Container(env, init=100, capacity=100)      #cantidad de RAM
+espera = simpy.Resource(env, capacity=1)               #control de I/O
+env.process(source(env, cant_proc, intervalo, CPU, RAM, espera, cant_inst))
+
+#correr la simulacion
+env.run()
